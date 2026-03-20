@@ -69,7 +69,8 @@ Rules:
       },
       generationConfig: {
         responseMimeType: "application/json",
-        temperature: 0.2, // Lower temperature for more deterministic JSON output
+        temperature: 0.2,      // Lower temperature for deterministic JSON output
+        maxOutputTokens: 2048, // Cap tokens to prevent runaway responses and reduce latency
       },
     });
 
@@ -125,8 +126,10 @@ Rules:
       );
     }
 
-    // return the validated JSON
-    return NextResponse.json(extractionValidation.data);
+    // Return validated JSON — no-store prevents medical data from being cached
+    return NextResponse.json(extractionValidation.data, {
+      headers: { "Cache-Control": "no-store" },
+    });
   } catch (error: any) {
     console.error("Error processing medical document:", error);
     return NextResponse.json(
