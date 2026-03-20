@@ -48,15 +48,28 @@ export async function POST(request: Request) {
     const projectId = process.env.GOOGLE_CLOUD_PROJECT || "prompt-wars-hyd-mar-20";
     const location = "us-central1"; // Routing AI API specifically to us-central1 where next-generation models launch first
 
-    const vertex_ai = new VertexAI({ project: projectId, location: "us-central1" });
+    const vertex_ai = new VertexAI({ project: projectId, location: location });
     const model = vertex_ai.getGenerativeModel({
-      model: "gemini-2.0-flash-lite", // Using Gemini 2.0 Flash Lite for ultra-fast latency as requested
+      model: "gemini-2.0-flash-lite-preview-02-05", // Using Gemini 2.0 Flash Lite for ultra-fast latency with preview identifier
       systemInstruction: {
         role: "system",
-        parts: [{ text: "You are an expert Indian Medical Scribe. Extract patient_info (name, age, gender), medications (name, dosage, frequency, instructions), vitals (bp, pulse, weight), and critical_alerts from handwritten prescriptions. Decipher messy handwriting. Translate regional terms to English. If data is missing, leave it null. ALWAYS return valid JSON following the schema." }]
+        parts: [{ text: `You are an expert Indian Medical Scribe. 
+Extract the following information from handwritten prescriptions and lab reports:
+1. patient_info (name, age, gender)
+2. medications (name, dosage, frequency, instructions)
+3. vitals (bp, pulse, weight)
+4. critical_alerts
+5. detected_language (the language of the original document)
+
+Rules:
+- Handwriting Analysis: Decipher messy and overlapping text carefully.
+- Regional Translation: Translate Hindi, Tamil, or any local medical terms into standard clinical English.
+- Safety First: If a medication dosage is ambiguous, flag it as 'UNVERIFIED_AMBIGUOUS'—never guess.
+- Formatting: ALWAYS return valid JSON following the schema. If data is missing for a field, leave it null or as an empty array as appropriate.` }]
       },
       generationConfig: {
         responseMimeType: "application/json",
+        temperature: 0.2, // Lower temperature for more deterministic JSON output
       },
     });
 
