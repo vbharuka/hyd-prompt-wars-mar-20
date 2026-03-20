@@ -7,6 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
+import { db } from "@/lib/firebase";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+
 export default function MedLinkFrontend() {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
@@ -14,6 +17,19 @@ export default function MedLinkFrontend() {
   const [error, setError] = useState<string | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const saveToFirestore = async (scanResult: any) => {
+    try {
+      await addDoc(collection(db, "scans"), {
+        ...scanResult,
+        timestamp: serverTimestamp(),
+        fileName: file?.name || "sample_prescription"
+      });
+      console.log("Successfully saved scan to Firestore history.");
+    } catch (saveErr: any) {
+      console.error("Firebase error while saving scan:", saveErr);
+    }
+  };
 
   const SAMPLE_PRESCRIPTION_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="; 
 
@@ -65,7 +81,10 @@ export default function MedLinkFrontend() {
         if (!response.ok) {
             throw new Error(data.error || "Failed to analyze the medical document.");
         }
-        setResult(data.data || data);
+        const scanData = data.data || data;
+        setResult(scanData);
+        // Persist the result to Firestore history
+        await saveToFirestore(scanData);
     } catch (err: any) {
         setError(err.message || "An unexpected error occurred.");
     } finally {
@@ -117,7 +136,10 @@ export default function MedLinkFrontend() {
               throw new Error(data.error || "Failed to analyze the medical document.");
           }
   
-          setResult(data.data || data);
+          const scanData = data.data || data;
+          setResult(scanData);
+          // Persist the result to Firestore history immediately after success
+          await saveToFirestore(scanData);
       } catch (err: any) {
           setError(err.message || "An unexpected network error occurred.");
       } finally {
