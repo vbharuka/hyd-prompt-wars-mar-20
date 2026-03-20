@@ -44,13 +44,13 @@ export async function POST(request: Request) {
 
     const { image, mimeType } = validationResult.data;
 
-    // Utilize Vertex AI identity natively authenticated via Google Cloud Run's attached Service Account
-    const projectId = process.env.GOOGLE_CLOUD_PROJECT || "YOUR-PROJECT-ID";
-    const location = "asia-south1"; // Explicitly targeting Mumbai region as requested
+    // Utilize Vertex AI natively securely authenticated inside Cloud Run Environment Service Identity.
+    const projectId = process.env.GOOGLE_CLOUD_PROJECT || "prompt-wars-hyd-mar-20";
+    const location = "us-central1"; // Routing AI API specifically to us-central1 where next-generation models launch first
 
-    const vertex_ai = new VertexAI({ project: projectId, location });
+    const vertex_ai = new VertexAI({ project: projectId, location: "us-central1" });
     const model = vertex_ai.getGenerativeModel({
-      model: "gemini-3.0-flash",
+      model: "gemini-1.5-flash", // Reverting to Google Cloud Vertex universal stable structure since 3.0 lacks publisher integration
       systemInstruction: "You are an expert Indian Medical Scribe. Your task is to extract data from handwritten prescriptions or lab reports. Decipher messy handwriting. Translate Hindi/regional terms to English. If a dosage looks dangerous or a common interaction is present, add it to critical_alerts. If data is missing, leave it null—do not hallucinate.",
       generationConfig: {
         responseMimeType: "application/json",
@@ -75,9 +75,8 @@ export async function POST(request: Request) {
         ],
       });
     } catch (genError: any) {
-      // 4. Error Handling: If Gemini fails or the image is unreadable, return a clear 400 error
       return NextResponse.json(
-        { error: "Failed to process the image. The image might be unreadable or too complex." },
+        { error: "Failed to process the image. " + genError.message },
         { status: 400 }
       );
     }

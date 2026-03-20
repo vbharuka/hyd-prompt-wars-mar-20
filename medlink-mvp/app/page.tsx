@@ -52,54 +52,6 @@ export default function MedLinkFrontend() {
   };
 
   const processFile = async (selectedFile: File) => {
-    setFile(selectedFile);
-    setError(null);
-    setLoading(true);
-    setResult(null);
-
-    try {
-      const reader = new FileReader();
-      reader.readAsDataURL(selectedFile);
-      reader.onload = async () => {
-        const base64String = reader.result as string;
-        // Split out the mime type and the actual base64 data to pass exactly what the API needs
-        const mimeTypeMatch = base64String.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+).*,/);
-        const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : selectedFile.type;
-        const base64Data = base64String.split(",")[1];
-
-        const response = await fetch("/api/analyze", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-             image: base64Data,
-             mimeType: mimeType
-          })
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || "Failed to analyze document.");
-        }
-
-        setResult(data.data || data);
-      };
-      reader.onerror = () => {
-        throw new Error("Failed to read the file.");
-      }
-    } catch (err: any) {
-      setError(err.message || "An unexpected error occurred");
-      setLoading(false);
-    }
-    
-    // setLoading(false) should be handled inside reader.onload to execute after the fetch finishes
-    // so we'll adjust the API interaction cleanly here:
-  };
-
-  // Adjust processFile using promise wrapping for cleaner async flow with FileReader
-  const _processFileReliable = async (selectedFile: File) => {
       setFile(selectedFile);
       setError(null);
       setLoading(true);
