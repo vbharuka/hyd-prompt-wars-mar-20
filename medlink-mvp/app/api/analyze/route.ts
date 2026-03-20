@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { VertexAI } from "@google-cloud/vertexai";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -44,16 +44,12 @@ export async function POST(request: Request) {
 
     const { image, mimeType } = validationResult.data;
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "GEMINI_API_KEY environment variable is not configured" },
-        { status: 500 }
-      );
-    }
+    // Utilize Vertex AI identity natively authenticated via Google Cloud Run's attached Service Account
+    const projectId = process.env.GOOGLE_CLOUD_PROJECT || "YOUR-PROJECT-ID";
+    const location = "asia-south1"; // Explicitly targeting Mumbai region as requested
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
+    const vertex_ai = new VertexAI({ project: projectId, location });
+    const model = vertex_ai.getGenerativeModel({
       model: "gemini-3.0-flash",
       systemInstruction: "You are an expert Indian Medical Scribe. Your task is to extract data from handwritten prescriptions or lab reports. Decipher messy handwriting. Translate Hindi/regional terms to English. If a dosage looks dangerous or a common interaction is present, add it to critical_alerts. If data is missing, leave it null—do not hallucinate.",
       generationConfig: {
@@ -63,14 +59,21 @@ export async function POST(request: Request) {
 
     let responseResult;
     try {
-      responseResult = await model.generateContent([
-        {
-          inlineData: {
-            data: image,
-            mimeType: mimeType,
+      responseResult = await model.generateContent({
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                inlineData: {
+                  data: image,
+                  mimeType: mimeType,
+                },
+              },
+            ],
           },
-        },
-      ]);
+        ],
+      });
     } catch (genError: any) {
       // 4. Error Handling: If Gemini fails or the image is unreadable, return a clear 400 error
       return NextResponse.json(
@@ -79,8 +82,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const responseText = responseResult.response.text();
-
+    let responseText = "";
+    if (responseResult.response?.candidates?.[0]?.content?.parts?.[0]?.text) {
+        responseText = responseResult.response.candidates[0].content.parts[0].text;
+    }
+    
     let parsedJson;
     try {
       parsedJson = JSON.parse(responseText);
