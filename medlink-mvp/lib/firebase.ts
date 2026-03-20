@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import { getStorage } from "firebase/storage";
 
 // Firebase configuration sourced from environment variables.
 // Set NEXT_PUBLIC_FIREBASE_* in your .env.local and as Cloud Run build args.
@@ -22,10 +23,11 @@ const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 // Initialize services
 const db = getFirestore(app);
 const auth = getAuth(app);
+const storage = getStorage(app); // Firebase Storage — for persisting prescription images
 
 // Request profile + email scopes explicitly for a richer user identity token
 const googleProvider = new GoogleAuthProvider();
 googleProvider.addScope("profile");
 googleProvider.addScope("email");
 
-export { db, auth, googleProvider };
+export { db, auth, googleProvider, storage };

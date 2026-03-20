@@ -8,9 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
-import { db, auth, googleProvider } from "@/lib/firebase";
+import { db, auth, googleProvider, storage } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut, User } from "firebase/auth";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 // ---------------------------------------------------------------------------
 // Domain types — mirror the Zod ExtractionSchema in route.ts
@@ -64,6 +65,7 @@ export default function MedLinkFrontend() {
   const [error, setError] = useState<string | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const [prescriptionImageUrl, setPrescriptionImageUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Handle post-OAuth redirect (required for Cloud Run where signInWithPopup is
@@ -109,9 +111,35 @@ export default function MedLinkFrontend() {
     setResult(null);
     setFile(null);
     setIsSaved(false);
+    setPrescriptionImageUrl(null);
   }, []);
 
-  const saveToFirestore = useCallback(async (scanResult: ScanResult): Promise<void> => {
+  // Upload compressed prescription image to Firebase Storage.
+  // Returns the public download URL, or null if the upload fails (non-blocking).
+  // Path: scans/{userId}/{timestamp}-{originalName}.webp
+  const uploadPrescriptionImage = useCallback(async (
+    compressedFile: File,
+    userId: string,
+  ): Promise<string | null> => {
+    try {
+      const safeName = (file?.name ?? "prescription").replace(/[^a-zA-Z0-9._-]/g, "_");
+      const storageRef = ref(storage, `scans/${userId}/${Date.now()}-${safeName}.webp`);
+      const snapshot = await uploadBytes(storageRef, compressedFile, {
+        contentType: "image/webp",
+        customMetadata: { uploadedBy: userId },
+      });
+      return await getDownloadURL(snapshot.ref);
+    } catch (err: unknown) {
+      // Non-fatal — scan results still render even if Storage is unavailable
+      console.error("Firebase Storage upload error:", err);
+      return null;
+    }
+  }, [file]);
+
+  const saveToFirestore = useCallback(async (
+    scanResult: ScanResult,
+    imageUrl?: string | null,
+  ): Promise<void> => {
     if (!user) return;
     try {
       await addDoc(collection(db, "scans"), {
@@ -120,6 +148,7 @@ export default function MedLinkFrontend() {
         userEmail: user.email,
         timestamp: serverTimestamp(),
         fileName: file?.name ?? "sample_prescription",
+        ...(imageUrl ? { imageUrl } : {}),
       });
     } catch (saveErr: unknown) {
       console.error("Firebase Firestore save error:", saveErr);
@@ -194,9 +223,10 @@ export default function MedLinkFrontend() {
     setError(null);
     setLoading(true);
     setResult(null);
+    setPrescriptionImageUrl(null);
     setIsSaved(false);
     try {
-      // Compress to ≤1 MB / ≤1600 px WebP before upload — reduces Vertex AI latency
+      // Compress to ≤1 MB / ≤1600 px WebP — reduces Vertex AI latency and Storage cost
       const compressedFile = await imageCompression(selectedFile, {
         maxSizeMB: 1,
         maxWidthOrHeight: 1600,
@@ -215,15 +245,22 @@ export default function MedLinkFrontend() {
         },
       );
 
-      const scanData = await analyzeImage(base64Data, mimeType);
+      // Firebase Storage upload and Vertex AI analysis run in parallel —
+      // they are independent so there is no reason to wait for one before the other.
+      const [imageUrl, scanData] = await Promise.all([
+        user ? uploadPrescriptionImage(compressedFile, user.uid) : Promise.resolve(null),
+        analyzeImage(base64Data, mimeType),
+      ]);
+
+      setPrescriptionImageUrl(imageUrl);
       setResult(scanData);
-      await saveToFirestore(scanData);
+      await saveToFirestore(scanData, imageUrl);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "An unexpected network error occurred.");
     } finally {
       setLoading(false);
     }
-  }, [analyzeImage, saveToFirestore]);
+  }, [analyzeImage, saveToFirestore, uploadPrescriptionImage, user]);
 
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) await processFile(e.target.files[0]);
@@ -250,9 +287,9 @@ export default function MedLinkFrontend() {
 
   const handleVerifyAndSave = useCallback(async () => {
     if (!result) return;
-    await saveToFirestore(result);
+    await saveToFirestore(result, prescriptionImageUrl);
     setIsSaved(true);
-  }, [result, saveToFirestore]);
+  }, [result, prescriptionImageUrl, saveToFirestore]);
 
   const hasCriticalAlerts = (result?.critical_alerts.length ?? 0) > 0;
 
@@ -438,7 +475,7 @@ export default function MedLinkFrontend() {
                   <Button
                     variant="ghost"
                     className="text-blue-700 text-lg p-0 hover:bg-transparent"
-                    onClick={() => { setResult(null); setFile(null); setIsSaved(false); }}
+                    onClick={() => { setResult(null); setFile(null); setIsSaved(false); setPrescriptionImageUrl(null); }}
                     aria-label="Go back and scan another prescription"
                   >
                     <ArrowLeft className="w-5 h-5 mr-2" aria-hidden="true" /> Scan Another
@@ -468,6 +505,23 @@ export default function MedLinkFrontend() {
                       <ul className="list-disc pl-5 mt-1 text-red-800 font-medium">
                         {result.critical_alerts.map((alert, idx) => <li key={idx}>{alert}</li>)}
                       </ul>
+                    </div>
+                  </div>
+                )}
+
+                {/* Original prescription image — stored in Firebase Storage */}
+                {prescriptionImageUrl && (
+                  <div className="rounded-2xl overflow-hidden shadow-sm border border-slate-200 bg-white">
+                    <img
+                      src={prescriptionImageUrl}
+                      alt="Original prescription image stored securely in Firebase Storage"
+                      className="w-full object-contain max-h-72 bg-slate-50"
+                    />
+                    <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 border-t border-slate-100">
+                      <span className="text-xs text-slate-400" aria-hidden="true">🔒</span>
+                      <p className="text-xs text-slate-500">
+                        Stored securely in <span className="font-semibold text-slate-600">Firebase Storage</span>
+                      </p>
                     </div>
                   </div>
                 )}
