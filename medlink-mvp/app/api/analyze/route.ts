@@ -50,8 +50,11 @@ export async function POST(request: Request) {
 
     const vertex_ai = new VertexAI({ project: projectId, location: "us-central1" });
     const model = vertex_ai.getGenerativeModel({
-      model: "gemini-1.5-flash", // Reverting to Google Cloud Vertex universal stable structure since 3.0 lacks publisher integration
-      systemInstruction: "You are an expert Indian Medical Scribe. Your task is to extract data from handwritten prescriptions or lab reports. Decipher messy handwriting. Translate Hindi/regional terms to English. If a dosage looks dangerous or a common interaction is present, add it to critical_alerts. If data is missing, leave it null—do not hallucinate.",
+      model: "gemini-2.0-flash-lite", // Using Gemini 2.0 Flash Lite for ultra-fast latency as requested
+      systemInstruction: {
+        role: "system",
+        parts: [{ text: "You are an expert Indian Medical Scribe. Extract patient_info (name, age, gender), medications (name, dosage, frequency, instructions), vitals (bp, pulse, weight), and critical_alerts from handwritten prescriptions. Decipher messy handwriting. Translate regional terms to English. If data is missing, leave it null. ALWAYS return valid JSON following the schema." }]
+      },
       generationConfig: {
         responseMimeType: "application/json",
       },

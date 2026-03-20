@@ -1,4 +1,7 @@
+"use client";
+
 import { useState, useRef, useEffect } from "react";
+import imageCompression from "browser-image-compression";
 import { motion, AnimatePresence } from "framer-motion";
 import { UploadCloud, HeartPulse, CheckCircle2, AlertTriangle, Share2, ArrowLeft, Volume2, Info, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -137,17 +140,26 @@ export default function MedLinkFrontend() {
       setResult(null);
   
       try {
+          // Efficient Edge Optimization: Resize and compress image to <1600px WebP before upload
+          const compressionOptions = {
+              maxSizeMB: 1,
+              maxWidthOrHeight: 1600,
+              useWebWorker: true,
+              fileType: "image/webp"
+          };
+          
+          const compressedFile = await imageCompression(selectedFile, compressionOptions);
+          
           const { base64Data, mimeType } = await new Promise<{base64Data: string, mimeType: string}>((resolve, reject) => {
               const reader = new FileReader();
-              reader.readAsDataURL(selectedFile);
+              reader.readAsDataURL(compressedFile);
               reader.onload = () => {
                   const base64String = reader.result as string;
-                  const mimeTypeMatch = base64String.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+).*,/);
-                  const parsedMimeType = mimeTypeMatch ? mimeTypeMatch[1] : selectedFile.type;
+                  const parsedMimeType = "image/webp";
                   const parsedBase64Data = base64String.split(",")[1];
                   resolve({ base64Data: parsedBase64Data, mimeType: parsedMimeType });
               };
-              reader.onerror = () => reject(new Error("Failed to read the attached file."));
+              reader.onerror = () => reject(new Error("Failed to read compressed file."));
           });
   
           const response = await fetch("/api/analyze", {
@@ -255,6 +267,7 @@ export default function MedLinkFrontend() {
                 <UploadCloud className="w-16 h-16 text-blue-500 mx-auto mb-4" aria-hidden="true" />
                 <h2 className="text-2xl font-semibold text-slate-800 mb-2">Upload Prescription</h2>
                 <p className="text-slate-600 text-lg">Drag & drop your medical document here, or tap to browse.</p>
+                <label htmlFor="prescription-upload" className="sr-only">Upload Prescription File</label>
                 <input 
                   type="file" 
                   id="prescription-upload"
@@ -407,7 +420,7 @@ export default function MedLinkFrontend() {
                      </div>
 
                      <div className="mt-8 flex flex-col sm:flex-row gap-4">
-                        <Button className="flex-1 h-16 text-xl bg-blue-700 hover:bg-blue-800 rounded-2xl shadow-md" onClick={() => { console.log("Saved patient data:", result); }} aria-label="Verify and save patient information">
+                        <Button className="flex-1 h-16 text-xl bg-blue-700 hover:bg-blue-800 rounded-2xl shadow-md text-white border-none font-black" onClick={() => { console.log("Saved patient data:", result); }} aria-label="Confirm medical data and save to record">
                            <CheckCircle2 className="w-6 h-6 mr-2" /> Verify & Save
                         </Button>
                         <Button variant="outline" className="flex-1 h-16 text-xl border-2 border-slate-300 text-slate-800 hover:bg-slate-50 rounded-2xl" onClick={handleShare} aria-label="Share summary with doctor via WhatsApp">

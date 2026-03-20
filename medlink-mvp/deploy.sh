@@ -42,12 +42,15 @@ IMAGE_URL="asia-south1-docker.pkg.dev/$PROJECT_ID/med-link-repo/med-link-bridge"
 echo "Build & Push: Containerizing using Google Cloud Build..."
 gcloud builds submit --tag $IMAGE_URL
 
-echo "Deploying container 'med-link-bridge' to Cloud Run..."
+echo "Deploying container 'med-link-bridge' up-scaled for high efficiency..."
 gcloud run deploy med-link-bridge \
   --image $IMAGE_URL \
   --region asia-south1 \
   --allow-unauthenticated \
   --memory 1Gi \
-  --set-env-vars GOOGLE_CLOUD_PROJECT=$PROJECT_ID
+  --min-instances 1 \
+  --cpu-boost \
+  --set-env-vars GOOGLE_CLOUD_PROJECT=$PROJECT_ID \
+  --platform managed
 
 echo "Deployment Sequence Completed Successfully!"
