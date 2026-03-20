@@ -1,6 +1,8 @@
 steps:
   # 1. Build the container image
+  # We specify 'dir' to navigate into the sub-folder where the Next.js app lives
   - name: 'gcr.io/cloud-builders/docker'
+    dir: 'medlink-mvp'
     args:
       - 'build'
       - '-t'
