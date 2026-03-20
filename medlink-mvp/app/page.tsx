@@ -1,16 +1,17 @@
-"use client";
-
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { UploadCloud, HeartPulse, CheckCircle2, AlertTriangle, Share2, ArrowLeft, Volume2, Info } from "lucide-react";
+import { UploadCloud, HeartPulse, CheckCircle2, AlertTriangle, Share2, ArrowLeft, Volume2, Info, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
-import { db } from "@/lib/firebase";
+import { db, auth, googleProvider } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { signInWithPopup, onAuthStateChanged, signOut, User } from "firebase/auth";
 
 export default function MedLinkFrontend() {
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any | null>(null);
@@ -18,10 +19,35 @@ export default function MedLinkFrontend() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (err: any) {
+      setError("Failed to sign in with Google.");
+    }
+  };
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    setResult(null);
+    setFile(null);
+  };
+
   const saveToFirestore = async (scanResult: any) => {
+    if (!user) return;
     try {
       await addDoc(collection(db, "scans"), {
         ...scanResult,
+        userId: user.uid,
+        userEmail: user.email,
         timestamp: serverTimestamp(),
         fileName: file?.name || "sample_prescription"
       });
@@ -83,7 +109,6 @@ export default function MedLinkFrontend() {
         }
         const scanData = data.data || data;
         setResult(scanData);
-        // Persist the result to Firestore history
         await saveToFirestore(scanData);
     } catch (err: any) {
         setError(err.message || "An unexpected error occurred.");
@@ -138,7 +163,6 @@ export default function MedLinkFrontend() {
   
           const scanData = data.data || data;
           setResult(scanData);
-          // Persist the result to Firestore history immediately after success
           await saveToFirestore(scanData);
       } catch (err: any) {
           setError(err.message || "An unexpected network error occurred.");
@@ -156,15 +180,55 @@ export default function MedLinkFrontend() {
 
   const hasCriticalAlerts = result?.critical_alerts && result.critical_alerts.length > 0;
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <HeartPulse className="w-16 h-16 text-blue-600 animate-pulse" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-900">
-      <header className="bg-blue-700 text-white p-4 shadow-md sticky top-0 z-10 text-center" role="banner">
+      <header className="bg-blue-700 text-white p-4 shadow-md sticky top-0 z-10 flex items-center justify-between px-6" role="banner">
+         <div className="w-10"></div>
          <h1 className="text-2xl font-bold tracking-tight">Med-Link MVP</h1>
+         {user ? (
+           <Button variant="ghost" className="text-white hover:bg-blue-800" onClick={handleLogout} aria-label="Sign out">
+             <LogOut className="w-5 h-5" />
+           </Button>
+         ) : <div className="w-10"></div>}
       </header>
 
       <main className="flex-1 container max-w-2xl mx-auto p-4 md:p-6 flex flex-col justify-center" role="main">
         <AnimatePresence mode="wait">
-          {!result && !loading && (
+          {!user && (
+            <motion.div
+              key="login"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex flex-col items-center justify-center text-center space-y-8"
+            >
+              <div className="bg-white p-10 rounded-3xl shadow-xl border border-slate-100 max-w-sm w-full">
+                <div className="bg-blue-50 w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                  <HeartPulse className="w-12 h-12 text-blue-600" />
+                </div>
+                <h2 className="text-3xl font-bold text-slate-900 mb-2">Welcome Back</h2>
+                <p className="text-slate-500 mb-8">Sign in to securely access your medical document history.</p>
+                <Button 
+                  size="lg" 
+                  className="w-full h-14 text-lg rounded-xl bg-blue-700 hover:bg-blue-800 shadow-md font-bold"
+                  onClick={handleLogin}
+                >
+                  Sign in with Google
+                </Button>
+                {error && <p className="text-red-600 mt-4 font-medium">{error}</p>}
+              </div>
+            </motion.div>
+          )}
+
+          {user && !result && !loading && (
             <motion.div
               key="scan"
               initial={{ opacity: 0, y: 10 }}
@@ -173,6 +237,11 @@ export default function MedLinkFrontend() {
               transition={{ duration: 0.3 }}
               className="flex flex-col items-center justify-center space-y-8 py-10"
             >
+              <div className="text-center mb-4">
+                <h2 className="text-xl font-bold text-slate-800">Hello, {user.displayName?.split(" ")[0]}</h2>
+                <p className="text-slate-500">Ready to decipher a new prescription?</p>
+              </div>
+
               <div 
                 className="w-full border-4 border-dashed border-blue-200 hover:border-blue-400 bg-white rounded-2xl p-12 text-center cursor-pointer transition-colors shadow-sm focus-within:ring-2 focus-within:ring-blue-500 outline-none"
                 onDragOver={(e) => e.preventDefault()}
@@ -229,7 +298,7 @@ export default function MedLinkFrontend() {
             </motion.div>
           )}
 
-          {loading && (
+          {user && loading && (
             <motion.div
               key="loading"
               initial={{ opacity: 0, scale: 0.9 }}
@@ -244,7 +313,7 @@ export default function MedLinkFrontend() {
             </motion.div>
           )}
 
-          {result && !loading && (
+          {user && result && !loading && (
              <motion.div
               key="results"
               initial={{ opacity: 0, y: 20 }}
